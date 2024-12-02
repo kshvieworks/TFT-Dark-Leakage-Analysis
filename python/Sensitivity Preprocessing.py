@@ -29,13 +29,14 @@ class TFTDarkLeakageAnalysis:
         self.window.geometry(f"{fw+350}x{int(2*fh/3)}")
         self.window.resizable(False, False)
 
-        self.FOI = np.zeros(2, dtype=int)
+        # self.FOI = np.zeros(2, dtype=int)
         self.ROI1 = np.zeros(2, dtype=int)
         self.ROI2 = np.zeros(2, dtype=int)
         self.Point1 = np.zeros(2, dtype=int)
         self.Point2 = np.zeros(2, dtype=int)
         self.filepath = ""
         self.read_data = np.array([], dtype=np.float64)
+        self.dark_data = np.array([], dtype=np.float64)
         self.frame_average = np.array([], dtype=np.float64)
         self.variance_ij = np.array([], dtype=np.float64)
         self.Average = 0
@@ -50,53 +51,54 @@ class TFTDarkLeakageAnalysis:
 
         self.__init__(window)
 
-        self.filepath = tkinter.filedialog.askdirectory(initialdir=f"{fd}/")
-        self.label.configure(text=f"{self.filepath[-100:]}")
+        self.filepath = tkinter.filedialog.askopenfilename(initialdir=f"{fd}/")
+        self.label.configure(text=f"{self.filepath[-20:]}")
 
     def Read_Image(self):
 
-        onlyfiles = [f for f in listdir(self.filepath) if isfile(join(self.filepath, f))]
+        file_now = self.filepath
+        if file_now[-3:] == 'raw':
 
-        for file_now in onlyfiles:
-            if file_now[-3:] == 'raw':
+            fid = open(f"{file_now}", "rb")
+            read_data_now = np.fromfile(fid, dtype=np.uint16, sep="")
+            read_data_now = read_data_now.reshape(Image_Size)
+            fid.close()
 
-                fid = open(f"{self.filepath}/{file_now}", "rb")
-                read_data_now = np.fromfile(fid, dtype=np.uint16, sep="")
-                read_data_now = read_data_now.reshape(Image_Size)
-                fid.close()
+            self.read_data = read_data_now.copy()
 
-                if not self.read_data.any():
-                    self.read_data = read_data_now[np.newaxis, :]
-                    continue
-
-                self.read_data = np.append(self.read_data, read_data_now[np.newaxis, :], axis=0)
-
-        self.frame_average = self.read_data.sum(axis=0) / len(self.read_data)
+        self.frame_average = self.read_data.copy()
 
         if not hasattr(self, 'ImageWidget'):
             self.ImageWidget = self.MakeFigureWidget(self.ImagePlotFrame)
         self.Show_Image(self.frame_average, self.ImageWidget)
 
-        self.set_text(self.FOI_EntryStart, '1')
-        self.set_text(self.FOI_EntryEnd, f"{int(len(self.read_data))}")
         self.set_text(self.ROI1_EntryX, '0')
         self.set_text(self.ROI1_EntryY, f"{int(self.frame_average.shape[0] - 1)}")
         self.set_text(self.ROI2_EntryX, f"{int(self.frame_average.shape[1] - 1)}")
         self.set_text(self.ROI2_EntryY, '0')
 
-
-        self.label_FOI.configure(text=f"{int(self.FOI_EntryStart.get()), int(self.FOI_EntryEnd.get())}")
         self.label_ROI1.configure(text=f"{int(self.ROI1_EntryX.get()), int(self.ROI1_EntryY.get())}")
         self.label_ROI2.configure(text=f"{int(self.ROI2_EntryX.get()), int(self.ROI2_EntryY.get())}")
 
         # self.Update_ROI(np.array([0, 0]), np.flip(self.frame_average.shape) - np.array([1, 1]))
 
+    def DarkBTNEvent(self):
+        fpath = tkinter.filedialog.askopenfilename(initialdir=f"{self.filepath}/")
+        self.dklabel.configure(text=f"{fpath[-20:]}")
+
+        file_now = fpath
+        if file_now[-3:] == 'raw':
+
+            fid = open(f"{file_now}", "rb")
+            read_data_now = np.fromfile(fid, dtype=np.uint16, sep="")
+            read_data_now = read_data_now.reshape(Image_Size)
+            fid.close()
+
+            self.dark_data = read_data_now.copy()
+
     def Update_ROI(self, BTN, ROI_X, ROI_Y):
 
-        if BTN == 'FOI':
-            self.FOI[0], self.FOI[1] = int(ROI_X), int(ROI_Y)
-            self.label_FOI.configure(text=f"({int(self.FOI[0])}, {int(self.FOI[1])})")
-        elif BTN == 'ROI1':
+        if BTN == 'ROI1':
             self.ROI1[0], self.ROI1[1] = int(ROI_X), int(ROI_Y)
             self.label_ROI1.configure(text=f"({int(self.ROI1[0])}, {int(self.ROI1[1])})")
 
@@ -120,8 +122,10 @@ class TFTDarkLeakageAnalysis:
             ROI_U = self.ROI2[1]
             ROI_D = self.ROI1[1]
 
-        self.ROI_Data = self.read_data[self.FOI[0]-1:self.FOI[1], ROI_U:ROI_D, ROI_L:ROI_R]
-        self.ROI_Frame_Average = self.ROI_Data.sum(axis=0) / len(self.ROI_Data)
+        self.frame_average = self.frame_average - self.dark_data
+
+        self.ROI_Data = self.frame_average[ROI_U:ROI_D, ROI_L:ROI_R]
+        self.ROI_Frame_Average = self.ROI_Data.copy()
 
         if not hasattr(self, 'ROIWidget'):
             self.ROIWidget = self.MakeFigureWidget(self.ROIPlotFrame)
@@ -167,7 +171,6 @@ class TFTDarkLeakageAnalysis:
 
     def DN2Coulomb(self, DN, IFS=2, LSBC = 0.125E-12, LSBV=61.035E-6):
         return LSBC*(IFS+1)*LSBV*DN
-
 
     def MakeFigureWidget(self, frame):
         fig, ax = plt.subplots(figsize=fs, tight_layout=True)
@@ -236,7 +239,7 @@ class TFTDarkLeakageAnalysis:
 
         labelspan = 1
         self.label = tkinter.Label(self.InputinfoFrame)
-        self.label.grid(column=0, row=1, columnspan=10)
+        self.label.grid(column=0, row=1, columnspan=2)
         self.OpenButton = tkinter.Button(self.InputinfoFrame, text='Open Path', command=self.Open_Path)
         self.OpenButton.grid(column=0, row=2)
 
@@ -245,14 +248,16 @@ class TFTDarkLeakageAnalysis:
         self.ReadButton.grid(column=labelspan, row=2)
 
         FOIspan = 2
-        self.FOI_EntryStart = tkinter.Entry(self.InputinfoFrame, width=4, textvariable="", relief="ridge")
-        self.FOI_EntryStart.grid(column=labelspan+Readspan, row=3)
-        self.FOI_EntryStart.insert(0, '0')
-        self.FOI_EntryEnd = tkinter.Entry(self.InputinfoFrame, width=4, textvariable="", relief="ridge")
-        self.FOI_EntryEnd.grid(column=labelspan+Readspan+1, row=3)
-        self.FOI_EntryEnd.insert(0, '0')
-        self.FOIBTN = tkinter.Button(self.InputinfoFrame, text='Frame(Start, End)', command=lambda m='FOI': self.Update_ROI(m, int(self.FOI_EntryStart.get()), int(self.FOI_EntryEnd.get())))
-        self.FOIBTN.grid(column=labelspan+Readspan, row=2, columnspan=FOIspan)
+        # self.FOI_EntryStart = tkinter.Entry(self.InputinfoFrame, width=4, textvariable="", relief="ridge")
+        # self.FOI_EntryStart.grid(column=labelspan+Readspan, row=3)
+        # self.FOI_EntryStart.insert(0, '0')
+        # self.FOI_EntryEnd = tkinter.Entry(self.InputinfoFrame, width=4, textvariable="", relief="ridge")
+        # self.FOI_EntryEnd.grid(column=labelspan+Readspan+1, row=3)
+        # self.FOI_EntryEnd.insert(0, '0')
+        self.dklabel = tkinter.Label(self.InputinfoFrame)
+        self.dklabel.grid(column=2, row=1, columnspan=10)
+        self.DarkBTN = tkinter.Button(self.InputinfoFrame, text='Dark File', command=self.DarkBTNEvent)
+        self.DarkBTN.grid(column=labelspan+Readspan, row=2, columnspan=FOIspan)
 
         ROI1span = 2
         self.ROI1_EntryX = tkinter.Entry(self.InputinfoFrame, width=4, textvariable="", relief="ridge")
@@ -277,18 +282,18 @@ class TFTDarkLeakageAnalysis:
         ROIShowspan = 2
         self.ROI_Show_BTN = tkinter.Button(self.InputinfoFrame, text='Show ROI', command=self.Show_ROI)
         self.ROI_Show_BTN.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span, row=2, columnspan=ROIShowspan)
-        self.label_FOI_prompt = tkinter.Label(self.InputinfoFrame, text='FOI')
-        self.label_FOI_prompt.grid(column=labelspan + Readspan + FOIspan + ROI1span + ROI2span, row=3)
+        # self.label_FOI_prompt = tkinter.Label(self.InputinfoFrame, text='FOI')
+        # self.label_FOI_prompt.grid(column=labelspan + Readspan + FOIspan + ROI1span + ROI2span, row=3)
         self.label_ROI1_prompt = tkinter.Label(self.InputinfoFrame, text='ROI1')
-        self.label_ROI1_prompt.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span, row=4)
+        self.label_ROI1_prompt.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span, row=3)
         self.label_ROI2_prompt = tkinter.Label(self.InputinfoFrame, text='ROI2')
-        self.label_ROI2_prompt.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span, row=5)
-        self.label_FOI = tkinter.Label(self.InputinfoFrame)
-        self.label_FOI.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span+1, row=3)
+        self.label_ROI2_prompt.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span, row=4)
+        # self.label_FOI = tkinter.Label(self.InputinfoFrame)
+        # self.label_FOI.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span+1, row=3)
         self.label_ROI1 = tkinter.Label(self.InputinfoFrame)
-        self.label_ROI1.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span+1, row=4)
+        self.label_ROI1.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span+1, row=3)
         self.label_ROI2 = tkinter.Label(self.InputinfoFrame)
-        self.label_ROI2.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span+1, row=5)
+        self.label_ROI2.grid(column=labelspan+Readspan+FOIspan+ROI1span+ROI2span+1, row=4)
 
         Divspan = 2
         self.Division_EntryX = tkinter.Entry(self.InputinfoFrame, width=4, textvariable="", relief="ridge")
@@ -320,32 +325,6 @@ class TFTDarkLeakageAnalysis:
 
         self.SaveClipboardBoardBTN = tkinter.Button(self.InputinfoFrame, text='Save Clipboard', command=self.SaveClipboardBTNEvent)
         self.SaveClipboardBoardBTN.grid(column=labelspan + Readspan + FOIspan + ROI1span + ROI2span + ROIShowspan + Divspan + Calcspan, row=3)
-
-        # self.DrawPTC_BTN = tkinter.Button(self.OutputinfoFrame, text='Draw PTC', command=self.DrawPTC)
-        # self.DrawPTC_BTN.grid(column=0, row=0)
-        #
-        # self.Point1_BTN = tkinter.Button(self.OutputinfoFrame, text='Point1(Left, DN)', command=self.Select_Point_1)
-        # self.Point1_BTN.grid(column=0, row=1)
-        # self.Point1_Label = tkinter.Label(self.OutputinfoFrame)
-        # self.Point1_Label.grid(column=1, row=1)
-        # self.Point2_BTN = tkinter.Button(self.OutputinfoFrame, text='Point2(Right, Up)', command=self.Select_Point_2)
-        # self.Point2_BTN.grid(column=0, row=2)
-        # self.Point2_Label = tkinter.Label(self.OutputinfoFrame)
-        # self.Point2_Label.grid(column=1, row=2)
-        # self.GainCalc_BTN = tkinter.Button(self.OutputinfoFrame, text='Calculate Camera Gain', command=self.GainCalc)
-        # self.GainCalc_BTN.grid(column=0, row=3)
-        # self.label_Line_prompt = tkinter.Label(self.OutputinfoFrame, text='Line Equation')
-        # self.label_Line_prompt.grid(column=0, row=4)
-        # self.label_Line = tkinter.Label(self.OutputinfoFrame)
-        # self.label_Line.grid(column=1, row=4)
-        # self.label_Gain_prompt = tkinter.Label(self.OutputinfoFrame, text='Camera Gain [DN/e]')
-        # self.label_Gain_prompt.grid(column=0, row=5)
-        # self.label_Gain = tkinter.Label(self.OutputinfoFrame)
-        # self.label_Gain.grid(column=1, row=5)
-        # self.label_Offset_prompt = tkinter.Label(self.OutputinfoFrame, text='Offset Noise [DN]')
-        # self.label_Offset_prompt.grid(column=0, row=6)
-        # self.label_Offset = tkinter.Label(self.OutputinfoFrame)
-        # self.label_Offset.grid(column=1, row=6)
 
 
 if __name__ == '__main__':
